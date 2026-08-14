@@ -1,0 +1,26 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
+
+const app=express();app.use(cors({origin:process.env.FRONTEND_ORIGIN||'*'}));app.use(express.json({limit:'1mb'}));
+const StudentSchema=new mongoose.Schema({studentId:{type:String,unique:true},name:String,className:String,faceDescriptor:[Number]},{timestamps:true});
+const AttendanceSchema=new mongoose.Schema({studentId:String,date:String,time:String,method:String,confidence:Number},{timestamps:true});
+const UserSchema=new mongoose.Schema({email:{type:String,unique:true},passwordHash:String,role:{type:String,default:'admin'}},{timestamps:true});
+const Student=mongoose.model('Student',StudentSchema),Attendance=mongoose.model('Attendance',AttendanceSchema),User=mongoose.model('User',UserSchema);
+const auth=(req,res,next)=>{try{const h=req.headers.authorization||'';req.user=jwt.verify(h.replace('Bearer ',''),process.env.JWT_SECRET);next()}catch{return res.status(401).json({message:'Unauthorized'})}};
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'smart-attendance-api'}));
+app.post('/api/auth/register',async(req,res)=>{try{const {email,password}=req.body;if(!email||!password||password.length<8)return res.status(400).json({message:'Email and password (8+ chars) required'});if(await User.findOne({email}))return res.status(409).json({message:'User already exists'});const user=await User.create({email,passwordHash:await bcrypt.hash(password,12)});res.status(201).json({id:user.id,email:user.email,role:user.role})}catch(e){res.status(500).json({message:'Registration failed'})}});
+app.post('/api/auth/login',async(req,res)=>{try{const {email,password}=req.body;const u=await User.findOne({email});if(!u||!(await bcrypt.compare(password,u.passwordHash)))return res.status(401).json({message:'Invalid credentials'});const token=jwt.sign({sub:u.id,email:u.email,role:u.role},process.env.JWT_SECRET,{expiresIn:'8h'});res.json({token,user:{email:u.email,role:u.role}})}catch{res.status(500).json({message:'Login failed'})}});
+app.get('/api/students',auth,async(req,res)=>res.json(await Student.find().sort({createdAt:-1})));
+app.post('/api/students',auth,async(req,res)=>{try{const s=await Student.create(req.body);res.status(201).json(s)}catch(e){res.status(400).json({message:e.message})}});
+app.put('/api/students/:id',auth,async(req,res)=>res.json(await Student.findOneAndUpdate({studentId:req.params.id},req.body,{new:true})));
+app.delete('/api/students/:id',auth,async(req,res)=>{await Student.deleteOne({studentId:req.params.id});res.status(204).end()});
+app.get('/api/attendance',auth,async(req,res)=>res.json(await Attendance.find().sort({createdAt:-1}).limit(500)));
+app.post('/api/attendance',auth,async(req,res)=>{const a=await Attendance.create(req.body);res.status(201).json(a)});
+const port=process.env.PORT||10000;
+if(!process.env.MONGODB_URI||!process.env.JWT_SECRET)console.warn('Set MONGODB_URI and JWT_SECRET in environment variables before production use.');
+if(process.env.MONGODB_URI)mongoose.connect(process.env.MONGODB_URI).then(()=>console.log('MongoDB connected')).catch(console.error);
+app.listen(port,()=>console.log(`API listening on ${port}`));
