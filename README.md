@@ -2,6 +2,10 @@
 
 A responsive smart attendance application with browser-based face enrollment and recognition, student/class management, analytics and CSV reporting.
 
+## Live Preview
+
+[Open Live Project](https://rajaryan99341.github.io/smart-attendance-system/)
+
 ## Current live features
 - Dashboard with attendance statistics
 - Student and class management
